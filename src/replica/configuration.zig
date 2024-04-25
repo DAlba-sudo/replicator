@@ -1,3 +1,4 @@
+
 pub const Configuration = struct {
     inputs: []const []const u8,
     outputs: []const []const u8,
