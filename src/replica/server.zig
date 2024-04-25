@@ -92,7 +92,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
                 const n = posix.epoll_wait(
                     self.epfd,
                     &self.events,
-                    1e3,
+                    conf.async_timeout,
                 );
 
                 var ev: linux.epoll_event = undefined;
@@ -121,21 +121,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
                         self.ctx_allocator.allocator().destroy(item);
                     }
 
-                    // run the input through the provided serialization method
-                    // and output it to the outputs...
-                    for (self.ctx_pointer_list) |context_ptr| {
-                        if (context_ptr) |ptr| {
-                            const out: *Context = @ptrFromInt(ptr);
-                            if (out.category != .Output) {
-                                continue;
-                            }
-                            const w = try posix.write(out.fd, self.input_recv_buff[0..n]);
-                            if (w == 0) {
-                                // report that the output is no longer potentially recv data...
-                                std.debug.print("[Log] Output was written 0 bytes...\n", .{});
-                            }
-                        }
-                    }
+                    try self.replicate(self.input_recv_buff[0..n]);
                 },
                 .Output => {
                     const n = try posix.read(item.fd, &self.input_recv_buff);
@@ -146,8 +132,6 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
                         posix.close(item.fd);
                         self.ctx_allocator.allocator().destroy(item);
                     }
-
-
                 },
                 .Listener => {
                     var conn_addr: Address = Address.initIp4(.{ 0, 0, 0, 0 }, 0);
@@ -189,6 +173,25 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
                     }
                 },
                 else => {},
+            }
+        }
+
+        fn replicate(self: *@This(), data: []const u8) !void {
+            // run the input through the provided serialization method
+            // and output it to the outputs...
+            for (self.ctx_pointer_list) |context_ptr| {
+                if (context_ptr) |ptr| {
+                    const out: *Context = @ptrFromInt(ptr);
+                    if (out.category != .Output) {
+                        continue;
+                    }
+
+                    const w = try posix.write(out.fd, data);
+                    if (w == 0) {
+                        // report that the output is no longer potentially recv data...
+                        std.debug.print("[Log] Output was written 0 bytes...\n", .{});
+                    }
+                }
             }
         }
 
