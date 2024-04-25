@@ -10,4 +10,5 @@ pub const Context = struct {
     };
     category: Category = .Unknown,
     fd: posix.fd_t,
+    ptr_loc: ?usize = null,
 };
