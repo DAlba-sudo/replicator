@@ -44,5 +44,4 @@ $ replicator -p 9090 0.0.0.0
 
 Configuring the replicator service is slightly different than your typical app/program. Since the initial design goal for this was to take advantage of comptime-known inputs and outputs, we avoid memory allocation via syscalls and instead use `FixedBufferAllocators` backed by buffers living in the `bss` section of the executable.
 
-To configure the app, edit the `src/config.zig` file with the values you'd like to use.
-
+To configure the app, edit the `src/config.zig` file with the values you'd like to use... then rebuild the app with `zig build`.

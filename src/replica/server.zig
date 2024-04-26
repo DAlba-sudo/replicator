@@ -6,12 +6,9 @@ const posix = std.posix;
 const linux = std.os.linux;
 const Address = std.net.Address;
 
-pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
+pub fn Replicator(comptime conf: Configuration) type {
     const max_sockets = 1 + conf.inputs.len + conf.outputs.len;
     const context_sz = @alignOf(Context) + @sizeOf(Context) + (@sizeOf(Context) % @alignOf(Context));
-
-    // TODO: implement the "serializer" for structs...
-    _ = T;
 
     return struct {
         // configuration
@@ -86,6 +83,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
             try self.event_loop();
         }
 
+        // the asynchronous event loop being used in the replicator
         fn event_loop(self: *@This()) !void {
             std.debug.print("[Log] Starting event loop...\n", .{});
             while (!self.should_shutdown) {
@@ -109,8 +107,11 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
             }
         }
 
+        // handles the asynchronous events once the context is known 
         fn handle_async(self: *@This(), item: *Context) !void {
             switch (item.category) {
+                // Intent: read from the input, replicate what we read into the buffer to the rest of
+                // the outputs.
                 .Input => {
                     const n = try posix.read(item.fd, &self.input_recv_buff);
                     if (n == 0) {
@@ -123,6 +124,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
 
                     try self.replicate(self.input_recv_buff[0..n]);
                 },
+                // Intent: handle an output that decides to leave, otherwise ignore data from an output.
                 .Output => {
                     const n = try posix.read(item.fd, &self.input_recv_buff);
                     if (n == 0) {
@@ -133,6 +135,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
                         self.ctx_allocator.allocator().destroy(item);
                     }
                 },
+                // Intent: Accept new connection, categorize, and register with epoll.
                 .Listener => {
                     var conn_addr: Address = Address.initIp4(.{ 0, 0, 0, 0 }, 0);
                     var conn_addr_len = conn_addr.getOsSockLen();
@@ -176,9 +179,9 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
             }
         }
 
+        // run the input through the provided serialization method
+        // and output it to the outputs...
         fn replicate(self: *@This(), data: []const u8) !void {
-            // run the input through the provided serialization method
-            // and output it to the outputs...
             for (self.ctx_pointer_list) |context_ptr| {
                 if (context_ptr) |ptr| {
                     const out: *Context = @ptrFromInt(ptr);
@@ -195,6 +198,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
             }
         }
 
+        // register the socket with the epoll instance 
         fn register_with_epoll(self: *@This(), item: *Context) !void {
             var ev = linux.epoll_event{ .events = linux.EPOLL.IN | linux.EPOLL.HUP, .data = .{ .ptr = @intFromPtr(item) } };
             try posix.epoll_ctl(
@@ -205,6 +209,7 @@ pub fn Replicator(comptime conf: Configuration, comptime T: type) type {
             );
         }
 
+        // categorizes the connection based on the address we were given...
         fn categorize_connection(self: *@This(), address: Address) !Context.Category {
             const conn_str = try std.fmt.allocPrint(
                 self.addr_allocator.allocator(),
